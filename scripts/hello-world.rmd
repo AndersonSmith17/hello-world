@@ -1,0 +1,209 @@
+---
+title: "Practice wrangling NEON raw data"
+author: "Your Name"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+date: "2024-02-15"
+---
+Today, we'll explore commands included in the `dplyr` package, which loads as part of the `tidyverse` package.
+
+```{r echo = FALSE, results = 'asis'}
+image = "https://biodash.github.io/codeclub/02_dplyr-core-verbs/featured.png"
+cat(paste0('<center><img src="', image,  '"></center>')) 
+```
+
+## Load packages & raw data files
+
+We have previously run the `install.packages()` commands for the packages we'll use today.  
+
+However, it's still considered a best practice for reproducibility to include the commands-- hashed out-- so that if a collaborator *doesn't* have the packages, they can easily install them and then be ready to roll!  
+
+```{r load libraries, message = FALSE}
+
+#install.packages("tidyverse")
+#install.packages("here")
+
+library(tidyverse)
+library(here)
+
+```
+
+We'll explore data wrangling with the NEON data we downloaded on Tuesday trying to address our Week 2 assignment hypothesis: 
+> **Ground beetle abundance** increases with increasing **precipitation** in the previous month.
+
+Using the `here` package will allow us to import our raw data files from within the raw data subfolder where we saved them to on Tuesday.
+
+```{r import raw data, message = FALSE}
+
+# Raw beetle data
+beetles_raw <- read_csv(here("data", "raw", "bet_sorting.csv"))
+
+# Raw throughfall precipitation data
+precip_raw <- read_csv(here("data", "raw", "THRPRE_30min.csv"))
+
+```
+
+## Exploring and wrangling beetle data
+
+### View data structure
+A best practice after you import data is to take a look at its structure to get a sense of what you're working with. Let's explore the ground beetles data first, since that dataset seems a little less intimidating (*only* 502 observations, vs. 87600 in the precipitation dataset!)
+
+```{r}
+
+# Indicate what type of data each column contains
+str(beetles_raw)
+
+# Print column names in the dataset
+names(beetles_raw)
+
+```
+
+### Select focal columns
+If we're interested specifically in beetle abundance, we don't necessarily need to retain all of the columns from our raw dataset. 
+We can use a `select()` command to indicate which columns we want to keep. Since it is essential that we keep our **raw data raw**, we will save this streamlined set of columns as a *new data object*.
+
+```{r}
+
+beetles <- beetles_raw %>% 
+  select(siteID, plotID, trapID, setDate, collectDate, sampleID,
+         sampleType, taxonID, scientificName, individualCount)
+
+```
+
+### Remove NA values
+We have now cut our dataset down from 32 columns to 10, but it seems like there may be lots of observations (rows) that do not contain the key information we need: **individualCount** of beetles collected on a given date in a specific trap.
+
+We can use a `filter()` command to drop those rows that contain `NA` values for one or more focal variables. 
+
+```{r}
+
+beetles <- beetles %>% 
+  filter(!is.na(individualCount))
+
+```
+
+Ok, we're down to 153 observations! This feels much more manageable *and* is a more focused dataset for addressing our question.
+
+**Note!** We could have combined both our `select()` and `filter()` commands in a single code chunk by linking the commands with a pipe (`%>%`)
+
+### Summarize data by month
+
+In order to summarize our data by month (and year), we need to first create stand-alone month and year columns (since our existing date is a full yyyy-mm-dd). We can use the `month()` and `year()` commands from the `lubridate` package, which is part of `tidyverse`.
+
+Once we have created those columns, we will group by year and month, then use a `summarize()` function to calculate summary values for each month-year combination. Here, we use an `n()` function as our summary calculation, since we want the *number* of beetles collected each month.
+
+```{r}
+
+beetles_by_month <- beetles %>% 
+  mutate(month = month(collectDate),
+         year = year(collectDate)) %>% 
+  group_by(year, month) %>% 
+  summarize(count = n())
+
+print(beetles_by_month)
+
+```
+
+Ok, our beetle data are looking well-wrangled! On to the precipitation data! 
+
+## Wrangle precipitation data 
+
+Once again, we'll start off by taking a look at the data structure & column names.
+
+### View data structure
+```{r}
+
+# Indicate what type of data each column contains
+str(precip_raw)
+
+# Print column names in the dataset
+names(precip_raw)
+
+```
+
+### Summarize precip. data by month
+This time, let's try conducting our summarize-by-month steps *without* first creating a simplified dataset. As before, we'll create stand-alone columns for month and year before grouping & summarizing our precipitation data.
+
+Here, we use a `sum()` as our summary calculation, since we want the *total* precipitation each month.
+```{r}
+
+precip_by_month <- precip_raw %>% 
+  mutate(year = year(endDateTime),
+         month = month(endDateTime)) %>% 
+  group_by(year, month) %>% 
+  summarize(total_precip = sum(TFPrecipBulk)) %>% 
+  drop_na()
+
+print(precip_by_month)
+
+```
+
+Ok, this looks good! Next step is to combine our beetle data with the precipitation data!  
+
+## Combining datasets to directly compare
+
+### Using a `join`
+
+R has a number of "join" functions that allow us to combine two datasets based on specified criteria. The most all-encompassing type of join is a `full_join()`, which will squish together all columns and rows from two different datasets, based on column names that are shared between them.
+
+For our our beetles and precipitation data, we can remind ourselves of the column names in common using:
+
+```{r}
+
+names(beetles_by_month)
+
+names(precip_by_month)
+
+```
+Since both datasets have "year" and "month" columns, when we join them together, "count" and "total_precip" data will be aligned in the dataset based on the year and month of collection. 
+
+```{r}
+
+beetle_rain <- full_join(beetles_by_month, precip_by_month) %>% 
+  arrange(year, month)
+
+print(beetle_rain)
+
+```
+
+Since the precipitation file included a longer time span than the beetles data, we will want to remove *some* of the NA values. **However** we need to be careful about doing that across the board, since we're interested in whether *current* beetle abundance is affected by the precipitation in the *previous* month.
+
+So before we remove rows for months when beetle data are missing, we'll first make a column that calculates the one-month-prior precipitation, using a `lag()` function from `dplyr`.
+
+```{r}
+beetle_prior_rain <- beetle_rain %>% 
+  arrange(year, month) %>% 
+  mutate(prior_precip = lag(total_precip, n = 1))
+
+print(beetle_prior_rain)
+
+```
+
+*Now* we can safely drop NA values, and further subset our data object to focus on just the dates, beetle abundance, and prior month's precipitation.
+
+```{r}
+
+beetle_prior_rain <- beetle_prior_rain %>% 
+  select(year, month, count, prior_precip) %>% 
+  drop_na()
+
+print(beetle_prior_rain)
+
+```
+
+Now, you'd be ready to analyze and/or visualize your wrangled, combined datasets! Typically, we will want to save a copy of *this* dataset to our **processed** data subfolder. (Remember that if this is the *first* processed data file you are trying to save, you'll have to make your processed )
+r
+```{r}
+
+# Command to check if "processed" subfolder already exists, and create if not
+ifelse(!dir.exists(here("data", "processed")), dir.create(here("data", "processed")), "Folder exists already")
+
+# Write our wrangled data to the processed data subfolder
+beetle_prior_rain %>% 
+  write_csv(here("data", "processed", "beetle_precip_combined.csv"))
+
+```
+

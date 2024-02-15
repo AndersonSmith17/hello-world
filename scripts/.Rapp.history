@@ -1,0 +1,52 @@
+install.packages("pryr")
+library(tidyverse)
+library(pryr)
+obj <- quote((x^2 + y^2 - 1)^3 - x^2 * y^3)
+obj_at_x <- function(x) {
+}
+obj_at_x <- function(x) {#
+  function(y) eval(substitute_q(obj, list(x = x)), list(y = y))#
+}
+obj_x <- seq(-1.136, 1.136, 0.001)
+obj_y_lower <- sapply(obj_x, function(x) uniroot(obj_at_x(x), c(-2, 0.6))$root)#
+obj_y_upper <- sapply(obj_x, function(x) uniroot(obj_at_x(x), c(0.6, 2))$root)
+obj_df_minmax <- data.frame(x = obj_x,  #
+                              y_min = obj_y_lower, #
+                              y_max = obj_y_upper)
+obj_full <- bind_rows(apply(obj_df_minmax, #
+                    1, #
+                    function(w) {#
+                      x <- w["x"]#
+                      y_min = w["y_min"]#
+                      y_max = w["y_max"]#
+                      y <- rnorm(2, mean = 0.33)#
+                      y <- y[between(y, y_min, y_max)]#
+                      x <- x[any(is.finite(y))]#
+                      data.frame(x, y, row.names = NULL)#
+                    })) %>% #
+  mutate(z1 = runif(n()), #
+         z2 = pmin(abs(rnorm(n())), 3), #
+         order = runif(n())) %>%#
+  arrange(order)
+ggplot(obj_full, #
+            aes(x, y, color = z1, size = z2)) + #
+  geom_point(pch = -1 * as.hexmode(9829)) + #
+  scale_color_gradient(limits = c(0, 1), low = "red3", high = "pink") + #
+  scale_size(limits = c(0, 3), range = c(0.1, 20)) + #
+  annotate("text",#
+           x = 0.5, y = -1,#
+           label = "Happy Hearts Day!",#
+           cex = 6) +#
+  theme_bw() + #
+  theme(legend.position="none")
+ggplot(obj_full, #
+            aes(x, y, color = z1, size = z2)) + #
+  geom_point(pch = -1 * as.hexmode(9829)) + #
+  scale_color_gradient(limits = c(0, 1), low = "red3", high = "pink") + #
+  scale_size(limits = c(0, 3), range = c(0.1, 20)) + #
+  annotate("text",#
+           x = 0.5, y = -1,#
+           label = "Happy Hearts Day!",#
+           cex = 6) +#
+  theme_bw() + #
+  theme(legend.position="none")
